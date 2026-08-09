@@ -63,6 +63,45 @@ const agentTools = [
       description: 'Reads the contents of the files the user just uploaded (e.g. zip extractions, chatGPT exports, text files). Use this when they say "Based on the file I uploaded..." or "Read my chats".',
       parameters: { type: 'object', properties: {} }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_local_file',
+      description: 'Reads the text context of any file on the local computer natively. Provide the absolute or relative file path.',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+        required: ['path']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'write_local_file',
+      description: 'Creates or edits a file on the local computer. Automatically triggers a permission prompt to the user before executing.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'The file path' },
+          content: { type: 'string', description: 'The exact string content to write to the file' }
+        },
+        required: ['path', 'content']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'run_terminal_command',
+      description: 'Executes a native Powershell / Bash command string on the local computer (e.g. npm install, python scripts). Triggers a safety authorization prompt.',
+      parameters: {
+        type: 'object',
+        properties: { command: { type: 'string', description: 'The exact command to run native to the OS' } },
+        required: ['command']
+      }
+    }
   }
 ];
 
@@ -128,6 +167,29 @@ async function executeTool(toolCall) {
 
     if (!combinedContent) return "Error: Unsupported file types. Only txt, json, markdown, or csv files in the archive are readable.";
     return `Documents read successfully. Here is the extracted content:\n\n${combinedContent}`;
+  }
+
+  // --- NEW AGENTIC EXECUTORS (PHASE 1) ---
+
+  if (name === 'read_local_file') {
+    if (!fs.existsSync(args.path)) return `Error: File not found at path ${args.path}`;
+    try {
+      // Limit to 10k chars to prevent context overload
+      const content = fs.readFileSync(args.path, 'utf8').substring(0, 10000);
+      return `File read successfully. Contents:\n\n${content}`;
+    } catch (e) {
+      return `Error reading file: ${e.message}`;
+    }
+  }
+
+  // SECURITY GATEWAY: Dangerous Tools DO NOT execute here. 
+  // We return a specialized UI payload that the Frontend catches and renders into a Security Modal.
+  if (name === 'write_local_file' || name === 'run_terminal_command') {
+    return JSON.stringify({
+      __AUTH_REQUIRED__: true,
+      tool: name,
+      args: args
+    });
   }
   
   return 'Error: Unknown tool.';

@@ -4,7 +4,9 @@ import './index.css';
 import Sidebar, { DEFAULT_SYSTEM_PROMPT } from './components/Sidebar';
 import JarvisOrb from './components/JarvisOrb';
 import CodeSandbox from './components/CodeSandbox';
+import AuthModal from './components/AuthModal';
 import './sandbox.css';
+import './auth.css';
 import { useChat, useOllamaStatus, saveSession } from './hooks/useNova';
 import { useVoice } from './hooks/useVoice';
 
@@ -16,6 +18,7 @@ export default function App() {
   const [savedSessions, setSavedSessions] = useState([]);
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [authRequest, setAuthRequest] = useState(null); // Security Gateway State
 
   const { messages, isLoading, error, sendMessage, clearMessages } = useChat(systemPrompt);
   const ollamaStatus = useOllamaStatus();
@@ -24,6 +27,13 @@ export default function App() {
   const showToast = useCallback((msg, type = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  // System Authorization Listener
+  useEffect(() => {
+    const handleAuth = (e) => setAuthRequest(e.detail);
+    document.addEventListener('nova-auth', handleAuth);
+    return () => document.removeEventListener('nova-auth', handleAuth);
   }, []);
 
   // Set up File Upload Handler
@@ -187,6 +197,17 @@ export default function App() {
       {toast && (
         <div className={`toast ${toast.type}`}>{toast.msg}</div>
       )}
+
+      {/* Security Gateway Modal */}
+      <AuthModal 
+        authRequest={authRequest} 
+        onResolve={(resultMsg) => {
+          setAuthRequest(null);
+          // Pipe the executed response DIRECTLY back into the LLM ReAct Loop natively
+          // We pass empty callback so it doesn't try to speak your input immediately
+          sendMessage(`[SYSTEM EXECUTION RESULT]: ${resultMsg}`);
+        }} 
+      />
     </div>
   );
 }

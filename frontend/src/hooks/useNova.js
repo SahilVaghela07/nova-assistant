@@ -59,6 +59,17 @@ export function useChat(systemPrompt) {
         const chunkText = decoder.decode(value, { stream: true });
         fullReply += chunkText;
 
+        // Security Gateway Intercept
+        if (fullReply.includes('__AUTH_REQUIRED__')) {
+          try {
+            const authPayload = JSON.parse(fullReply);
+            document.dispatchEvent(new CustomEvent('nova-auth', { detail: authPayload }));
+            // We do NOT call onStreamChunk or update UI text with the raw JSON payload.
+            // We just halt the stream.
+            break;
+          } catch(e) {} // Keep reading if JSON isn't fully streamed yet
+        }
+
         // Callback for the TTS engine or UI
         if (onStreamChunk) onStreamChunk(chunkText);
 
