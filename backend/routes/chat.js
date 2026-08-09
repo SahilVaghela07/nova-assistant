@@ -38,16 +38,30 @@ const agentTools = [
 // Execute the requested tool locally
 async function executeTool(toolCall) {
   const name = toolCall.function.name;
-  const args = toolCall.function.arguments; // May be object or raw JSON string depending on Ollama version
+  const args = toolCall.function.arguments || {}; 
   
-  const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+  let parsedArgs = args;
+  if (typeof args === 'string') {
+    try { parsedArgs = JSON.parse(args); } catch(e) { parsedArgs = {}; }
+  }
 
   if (name === 'get_time') {
     return new Date().toLocaleString();
   }
   
   if (name === 'open_application') {
-    const app = parsedArgs.app_name;
+    let app = (parsedArgs.app_name || '').toLowerCase().trim();
+    
+    // Intelligently map conversational app names to Windows executables
+    if (app.includes('note') || app === 'notepad') app = 'notepad';
+    else if (app.includes('calc')) app = 'calc';
+    else if (app.includes('paint')) app = 'mspaint';
+    else if (app.includes('word')) app = 'winword';
+    else if (app.includes('excel')) app = 'excel';
+    else if (app.includes('browser') || app.includes('edge') || app.includes('chrome')) app = 'msedge';
+
+    if (!app) return "Error: No application name provided.";
+
     try {
       // Secure execution wrapper for Windows
       await execAsync(`start ${app}`);
