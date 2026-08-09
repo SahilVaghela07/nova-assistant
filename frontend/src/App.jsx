@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import './index.css';
 
 import Sidebar, { DEFAULT_SYSTEM_PROMPT } from './components/Sidebar';
@@ -23,6 +23,39 @@ export default function App() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   }, []);
+
+  // Set up File Upload Handler
+  useEffect(() => {
+    const handleFileUpload = async (event) => {
+      const file = event.detail;
+      if (!file) return;
+
+      showToast(`Uploading ${file.name}...`, 'loading');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const res = await fetch('http://localhost:3001/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast(data.message || `✅ Successfully read ${file.name}`);
+          // Force NOVA to read the newly uploaded documents
+          sendMessage(`NOVA, I have just uploaded a file named ${file.name}. Please automatically trigger your 'read_uploaded_documents' tool to read the latest documents, and then tell me out loud that you have gathered the context successfully.`);
+        } else {
+          showToast(data.error || 'Upload failed', 'error');
+        }
+      } catch (err) {
+        showToast('Failed to connect to backend for upload', 'error');
+      }
+    };
+
+    document.addEventListener('nova-upload', handleFileUpload);
+    return () => document.removeEventListener('nova-upload', handleFileUpload);
+  }, [showToast, sendMessage]);
 
   const voiceHook = useVoice({
     onTranscript: (text) => {

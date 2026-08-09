@@ -55,6 +55,14 @@ const agentTools = [
         required: ['fact']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'read_uploaded_documents',
+      description: 'Reads the contents of the files the user just uploaded (e.g. zip extractions, chatGPT exports, text files). Use this when they say "Based on the file I uploaded..." or "Read my chats".',
+      parameters: { type: 'object', properties: {} }
+    }
   }
 ];
 
@@ -98,6 +106,28 @@ async function executeTool(toolCall) {
     memories.push({ fact, date: new Date().toISOString() });
     fs.writeFileSync(memoryFile, JSON.stringify(memories, null, 2));
     return `Success: Memory saved safely. Please acknowledge to Sahil that you have committed it to your permanent memory storage.`;
+  }
+
+  if (name === 'read_uploaded_documents') {
+    const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+    if (!fs.existsSync(UPLOAD_DIR)) return "Error: No files have been uploaded yet.";
+    
+    let combinedContent = "";
+    const files = fs.readdirSync(UPLOAD_DIR);
+    if (files.length === 0) return "Error: The upload folder is empty.";
+
+    files.forEach(file => {
+       const filePath = path.join(UPLOAD_DIR, file);
+       const stat = fs.statSync(filePath);
+       if (stat.isFile() && (file.endsWith('.txt') || file.endsWith('.json') || file.endsWith('.md') || file.endsWith('.csv'))) {
+          // Read up to 8000 characters per file to prevent blowing out the Llama 3M context window
+          const content = fs.readFileSync(filePath, 'utf8').substring(0, 8000);
+          combinedContent += `--- FILE: ${file} ---\n${content}\n\n`;
+       }
+    });
+
+    if (!combinedContent) return "Error: Unsupported file types. Only txt, json, markdown, or csv files in the archive are readable.";
+    return `Documents read successfully. Here is the extracted content:\n\n${combinedContent}`;
   }
   
   return 'Error: Unknown tool.';

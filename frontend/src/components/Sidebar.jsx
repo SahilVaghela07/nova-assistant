@@ -64,6 +64,27 @@ export default function Sidebar({
         </div>
       </div>
 
+      {/* File Ingestion */}
+      <div className="sidebar-section">
+        <span className="section-label">Data Ingestion (ZIP, JSON, TXT)</span>
+        <div style={{ padding: '4px 0' }}>
+          <label className="sidebar-btn" style={{ textAlign: 'center', cursor: 'pointer', display: 'block', backgroundColor: 'rgba(0, 255, 255, 0.05)', border: '1px dashed rgba(0, 255, 255, 0.3)' }}>
+            <span className="btn-icon">📁</span> Upload Files
+            <input 
+              type="file" 
+              accept=".zip,.txt,.json,.md,.csv" 
+              style={{ display: 'none' }} 
+              onChange={async (e) => {
+                if (e.target.files.length > 0) {
+                  // Bubble the file up to App.jsx handler
+                  document.dispatchEvent(new CustomEvent('nova-upload', { detail: e.target.files[0] }));
+                }
+              }} 
+            />
+          </label>
+        </div>
+      </div>
+
       {/* Voice Settings */}
       <div className="sidebar-section">
         <span className="section-label">Voice</span>

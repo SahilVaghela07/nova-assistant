@@ -9,8 +9,10 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
+    "adm-zip": "^0.6.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "express-fileupload": "^1.5.2",
     "node-fetch": "^3.3.2",
     "ollama": "^0.6.3"
   },
