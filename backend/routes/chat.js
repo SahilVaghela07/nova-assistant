@@ -1,11 +1,16 @@
 import express from 'express';
 import { exec } from 'child_process';
 import util from 'util';
+import fs from 'fs';
+import path from 'path';
 import { Ollama } from 'ollama';
 
 const execAsync = util.promisify(exec);
 const router = express.Router();
 const ollamaClient = new Ollama({ host: 'http://localhost:11434' });
+
+// Setup memory storage
+const memoryFile = path.join(process.cwd(), 'memory.json');
 
 // Define the exact tools the AI can use to control the computer
 const agentTools = [
@@ -31,6 +36,23 @@ const agentTools = [
           }
         },
         required: ['app_name']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'remember_fact',
+      description: 'Saves a long-term permanent fact about the user. Use this when they say "remember this" or tell you important personal information.',
+      parameters: {
+        type: 'object',
+        properties: {
+          fact: { 
+            type: 'string', 
+            description: 'The concise, specific fact to save globally for the future. (e.g., "Sahil is a CSE-IoT student at GCET")' 
+          }
+        },
+        required: ['fact']
       }
     }
   }
@@ -67,6 +89,17 @@ async function executeTool(toolCall) {
     }
   }
   
+  if (name === 'remember_fact') {
+    const fact = args.fact;
+    let memories = [];
+    if (fs.existsSync(memoryFile)) {
+      try { memories = JSON.parse(fs.readFileSync(memoryFile, 'utf8')); } catch(e){}
+    }
+    memories.push({ fact, date: new Date().toISOString() });
+    fs.writeFileSync(memoryFile, JSON.stringify(memories, null, 2));
+    return `Success: Memory saved safely. Please acknowledge to Sahil that you have committed it to your permanent memory storage.`;
+  }
+  
   return 'Error: Unknown tool.';
 }
 
@@ -85,11 +118,24 @@ router.post('/', async (req, res) => {
     'Transfer-Encoding': 'chunked'
   });
 
+  // Load permanent memories from disk
+  let memoryContext = '';
+  if (fs.existsSync(memoryFile)) {
+    try {
+      const memories = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+      if (memories.length > 0) {
+        memoryContext = `\n\nPERMANENT MEMORIES (Crucial Facts about Sahil you MUST remember):\n` 
+                      + memories.map(m => `- ${m.fact}`).join('\n');
+      }
+    } catch(e){}
+  }
+
   // HARDCODED INTELLIGENCE CORE
   const hardcodedCorePrompt = `
 You are NOVA, a hyper-intelligent personal assistant running completely locally on this computer. 
 Your primary creator and only user right now is named Sahil. 
 You are currently helping Sahil during the Zero to One Workshop. 
+${memoryContext}
 
 CRITICAL DIRECTIVES:
 1. NEVER refer to yourself as an AI, a language model, or software. 
@@ -100,7 +146,7 @@ CRITICAL DIRECTIVES:
    - If Sahil speaks in Gujarati, you MUST reply fluently and entirely in Gujarati.
    - If English, reply in English. 
    Do not mix scripts randomly. Commit 100% to the language spoken to you.
-5. If Sahil asks you to open an app or get the time, silently use your integrated Tools to perform the action, and then audibly confirm you completed it smoothly.
+5. If Sahil asks you to open an app or get the time or remember something, silently use your integrated Tools to perform the action, and then audibly confirm you completed it.
 `;
 
   const fullMessages = [
