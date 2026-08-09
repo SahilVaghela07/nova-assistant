@@ -104,6 +104,7 @@ export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd, recognitionLa
 
   const speakQueue = useRef([]);
   const accumulationBuffer = useRef('');
+  const isInsideCodeBlock = useRef(false);
 
   // Main streaming voice function
   const streamSpeak = useCallback((chunk, enabled, isNewMessage = false) => {
@@ -113,6 +114,7 @@ export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd, recognitionLa
     if (isNewMessage) {
       synthRef.current.cancel();
       accumulationBuffer.current = '';
+      isInsideCodeBlock.current = false;
       
       // Pause mic while AI speaks
       if (recognitionRef.current && isRecording) {
@@ -123,15 +125,34 @@ export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd, recognitionLa
 
     accumulationBuffer.current += chunk;
 
-    // Look for sentence boundaries (English, Hindi, Gujarati punctuation)
-    const match = accumulationBuffer.current.match(/[^.!?।\n]+[.!?।\n]+/);
-    
-    if (match) {
+    // Parse loop to extract as many sentences as are ready in the buffer
+    while (true) {
+      // Toggle code block state if we detect Markdown backticks
+      if (accumulationBuffer.current.includes('```')) {
+        isInsideCodeBlock.current = !isInsideCodeBlock.current;
+        // Strip the backticks out of the speech buffer so it doesn't say them
+        accumulationBuffer.current = accumulationBuffer.current.replace('```', ''); 
+      }
+
+      // Look for sentence boundaries (English, Hindi, Gujarati punctuation)
+      const match = accumulationBuffer.current.match(/[^.!?।\n]+[.!?।\n]+/);
+      
+      if (!match) break; // Need more chunks to finish the sentence
+
       const sentence = match[0];
       accumulationBuffer.current = accumulationBuffer.current.substring(sentence.length);
       
+      // CRITICAL: If we are inside a code block, DO NOT speak this sentence! Just silently consume it.
+      if (isInsideCodeBlock.current) {
+        continue;
+      }
+
+      // Clean the sentence for speaking
+      const cleanSentence = sentence.trim();
+      if (!cleanSentence) continue;
+
       // Create utterance for this specific sentence
-      const utterance = new SpeechSynthesisUtterance(sentence.trim());
+      const utterance = new SpeechSynthesisUtterance(cleanSentence);
       utterance.rate = 1.0;
       utterance.pitch = 1.05;
       utterance.volume = 1.0;

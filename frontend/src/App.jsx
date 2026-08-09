@@ -3,6 +3,8 @@ import './index.css';
 
 import Sidebar, { DEFAULT_SYSTEM_PROMPT } from './components/Sidebar';
 import JarvisOrb from './components/JarvisOrb';
+import CodeSandbox from './components/CodeSandbox';
+import './sandbox.css';
 import { useChat, useOllamaStatus, saveSession } from './hooks/useNova';
 import { useVoice } from './hooks/useVoice';
 
@@ -104,11 +106,15 @@ export default function App() {
     showToast('Memory cleared. New session started.');
   }, [clearMessages, stopSpeaking, showToast]);
 
+  // Check if AI is currently writing code
+  const assistantMsg = [...messages].reverse().find(m => m.role === 'assistant');
+  const hasCode = assistantMsg?.content?.includes('```');
+
   return (
-    <div className="app-layout" style={{ display: 'block' }}>
+    <div className={hasCode ? "split-layout" : "app-layout"} style={{ display: hasCode ? 'flex' : 'block' }}>
       
       {/* Top minimalistic bar */}
-      <div className="jarvis-top-bar">
+      <div className="jarvis-top-bar" style={{ zIndex: 100 }}>
         <div className="jarvis-title">{assistantName} // CORE ONLINE</div>
         
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
@@ -131,11 +137,16 @@ export default function App() {
       </div>
 
       {/* Main Orb Centerpiece */}
-      <JarvisOrb 
-        isRecording={isRecording} 
-        isSpeaking={isSpeaking} 
-        onClick={handleOrbClick} 
-      />
+      <div className={hasCode ? "orb-container-split" : "app-layout"} style={hasCode ? { width: '50%' } : {}}>
+        <JarvisOrb 
+          isRecording={isRecording} 
+          isSpeaking={isSpeaking} 
+          onClick={handleOrbClick} 
+        />
+      </div>
+
+      {/* Dynamic Code Sandbox Element */}
+      {hasCode && <CodeSandbox content={assistantMsg.content} />}
 
       {/* Sidebar as an Overlay */}
       <div className={`sidebar overlay ${sidebarOpen ? '' : 'hidden'}`}>

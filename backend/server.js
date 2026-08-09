@@ -5,6 +5,7 @@ import chatRouter from './routes/chat.js';
 import saveRouter from './routes/save.js';
 import statusRouter from './routes/status.js';
 import uploadRouter from './routes/upload.js';
+import executeRouter from './routes/execute.js';
 
 const app = express();
 const PORT = 3001;
@@ -18,6 +19,7 @@ app.use('/api/chat', chatRouter);
 app.use('/api/save', saveRouter);
 app.use('/api/status', statusRouter);
 app.use('/api/upload', uploadRouter);
+app.use('/api/execute', executeRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
