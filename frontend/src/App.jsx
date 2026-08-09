@@ -1,18 +1,18 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import './index.css';
 
 import Sidebar, { DEFAULT_SYSTEM_PROMPT } from './components/Sidebar';
-import ChatWindow from './components/ChatWindow';
-import InputBar from './components/InputBar';
+import JarvisOrb from './components/JarvisOrb';
 import { useChat, useOllamaStatus, saveSession } from './hooks/useNova';
 import { useVoice } from './hooks/useVoice';
 
 export default function App() {
   const [assistantName, setAssistantName] = useState('NOVA');
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true); // default to true in Jarvis mode
   const [savedSessions, setSavedSessions] = useState([]);
   const [toast, setToast] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { messages, isLoading, error, sendMessage, clearMessages } = useChat(systemPrompt);
   const ollamaStatus = useOllamaStatus();
@@ -37,21 +37,12 @@ export default function App() {
       onTranscript: handleTranscript,
     });
 
-  // Handle send from input bar
-  const handleSend = useCallback(async (text) => {
-    stopSpeaking();
-    const reply = await sendMessage(text);
-    if (reply) speak(reply, voiceEnabled);
-  }, [sendMessage, speak, voiceEnabled, stopSpeaking]);
-
-  // Handle mic toggle
-  const handleMicClick = useCallback(() => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
-  }, [isRecording, startRecording, stopRecording]);
+  // Handle orb click
+  const handleOrbClick = useCallback(() => {
+    if (isRecording) stopRecording();
+    else if (isSpeaking) stopSpeaking();
+    else startRecording();
+  }, [isRecording, isSpeaking, startRecording, stopRecording, stopSpeaking]);
 
   // Handle save session
   const handleSave = useCallback(async () => {
@@ -71,81 +62,63 @@ export default function App() {
 
   // Handle new session
   const handleNewSession = useCallback(() => {
-    if (messages.length > 0) {
-      const confirm = window.confirm('Start a new session? Current conversation will be cleared.');
-      if (!confirm) return;
-    }
     stopSpeaking();
     clearMessages();
-    showToast('New session started');
-  }, [messages.length, clearMessages, stopSpeaking, showToast]);
+    showToast('Memory cleared. New session started.');
+  }, [clearMessages, stopSpeaking, showToast]);
 
   return (
-    <div className="app-layout">
-      {/* Sidebar */}
-      <Sidebar
-        assistantName={assistantName}
-        setAssistantName={setAssistantName}
-        systemPrompt={systemPrompt}
-        setSystemPrompt={setSystemPrompt}
-        ollamaStatus={ollamaStatus}
-        voiceEnabled={voiceEnabled}
-        setVoiceEnabled={setVoiceEnabled}
-        isSpeaking={isSpeaking}
-        messageCount={messages.length}
-        onSave={handleSave}
-        onNewSession={handleNewSession}
-        savedSessions={savedSessions}
+    <div className="app-layout" style={{ display: 'block' }}>
+      
+      {/* Top minimalistic bar */}
+      <div className="jarvis-top-bar">
+        <div className="jarvis-title">{assistantName} // CORE ONLINE</div>
+        <button className="settings-btn" onClick={() => setSidebarOpen(true)}>
+          ⚙️
+        </button>
+      </div>
+
+      {/* Main Orb Centerpiece */}
+      <JarvisOrb 
+        isRecording={isRecording} 
+        isSpeaking={isSpeaking} 
+        onClick={handleOrbClick} 
       />
 
-      {/* Main chat area */}
-      <div className="chat-area">
-        {/* Offline banner */}
-        {ollamaStatus.ollama === false && (
-          <div className="offline-banner">
-            ⚠️ Ollama is not running. Please start Ollama on your machine, then{' '}
-            <a onClick={ollamaStatus.checkStatus}>refresh status</a>.
-          </div>
-        )}
-
-        {/* Header */}
-        <div className="chat-header">
-          <div className="chat-header-left">
-            <div className="header-avatar">🤖</div>
-            <div className="header-info">
-              <h2>{assistantName}</h2>
-              <span className="sub">
-                {isSpeaking ? '🔊 Speaking...' :
-                 isRecording ? '🎙️ Listening...' :
-                 isLoading ? '⏳ Thinking...' : 'Ready'}
-              </span>
-            </div>
-          </div>
-          <div className="header-right">
-            {messages.length > 0 && (
-              <span className="msg-count">{messages.length} msgs</span>
-            )}
-          </div>
+      {/* Sidebar as an Overlay */}
+      <div className={`sidebar overlay ${sidebarOpen ? '' : 'hidden'}`}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingBottom: '10px' }}>
+          <button className="settings-btn" onClick={() => setSidebarOpen(false)}>×</button>
         </div>
-
-        {/* Chat messages */}
-        <ChatWindow
-          messages={messages}
-          isLoading={isLoading}
-          error={error}
+        <Sidebar
           assistantName={assistantName}
-          onChipClick={handleSend}
-        />
-
-        {/* Input */}
-        <InputBar
-          onSend={handleSend}
-          isLoading={isLoading}
-          isRecording={isRecording}
-          voiceSupported={voiceSupported}
-          onMicClick={handleMicClick}
+          setAssistantName={setAssistantName}
+          systemPrompt={systemPrompt}
+          setSystemPrompt={setSystemPrompt}
+          ollamaStatus={ollamaStatus}
+          voiceEnabled={voiceEnabled}
+          setVoiceEnabled={setVoiceEnabled}
+          isSpeaking={isSpeaking}
+          messageCount={messages.length}
+          onSave={handleSave}
+          onNewSession={handleNewSession}
+          savedSessions={savedSessions}
         />
       </div>
+
+      {/* Offline banner (Overlay) */}
+      {ollamaStatus.ollama === false && (
+        <div className="offline-banner" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 60, justifyContent: 'center' }}>
+          ⚠️ Ollama is offline. Please ensure the Llama backend is running.
+        </div>
+      )}
+
+      {/* Error banner */}
+      {error && (
+        <div className="offline-banner" style={{ position: 'absolute', top: 80, left: '50%', transform: 'translateX(-50%)', zIndex: 60, borderRadius: '10px' }}>
+          ⚠️ {error}
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (

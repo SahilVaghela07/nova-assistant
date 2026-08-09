@@ -932,3 +932,237 @@ html, body, #root {
   margin: 12px 0;
 }
 
+/* =====================================================
+   JARVIS ORB INTERFACE (FULL SCREEN)
+   ===================================================== */
+
+.jarvis-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  background: radial-gradient(circle at center, #061921 0%, #01080b 100%);
+  overflow: hidden;
+  user-select: none;
+}
+
+.jarvis-orb {
+  position: relative;
+  width: 400px;
+  height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.jarvis-orb:hover {
+  transform: scale(1.05);
+}
+
+/* Outer Glow */
+.orb-glow-outer {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(13,227,233,0.1) 0%, rgba(13,227,233,0) 65%);
+  border-radius: 50%;
+  z-index: 0;
+  animation: pulse-ambient 4s infinite ease-in-out;
+}
+
+/* Base Ring class */
+.orb-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(13, 227, 233, 0.3);
+  box-shadow: inset 0 0 15px rgba(13, 227, 233, 0.2), 0 0 15px rgba(13, 227, 233, 0.2);
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Ring 1 - Outermost */
+.ring-slow {
+  width: 360px;
+  height: 360px;
+  border: 2px solid rgba(13, 227, 233, 0.15);
+  border-left: 2px solid rgba(13, 227, 233, 0.8);
+  border-right: 2px solid rgba(13, 227, 233, 0.8);
+  animation: spin-forward 15s linear infinite;
+}
+
+/* Ring 2 - Middle */
+.ring-medium {
+  width: 280px;
+  height: 280px;
+  border: 3px solid rgba(13, 227, 233, 0.1);
+  border-top: 3px solid rgba(13, 227, 233, 0.9);
+  border-bottom: 3px solid rgba(13, 227, 233, 0.9);
+  animation: spin-reverse 8s linear infinite;
+}
+
+/* Dashed overlay for high-tech look */
+.ring-dashed {
+  border-style: dashed;
+}
+
+/* Ring 3 - Inner */
+.ring-fast {
+  width: 200px;
+  height: 200px;
+  border: 4px solid rgba(13, 227, 233, 0.05);
+  border-left: 4px solid #0de3e9;
+  border-bottom: 4px solid #0de3e9;
+  animation: spin-forward 4s linear infinite;
+}
+
+/* Center Solid Core */
+.orb-core {
+  position: absolute;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(13,227,233,0.3) 0%, rgba(6,136,140,0.8) 100%);
+  border-radius: 50%;
+  box-shadow: 0 0 30px #0de3e9, inset 0 0 20px #0de3e9;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: core-idle 3s ease-in-out infinite;
+  overflow: hidden;
+}
+
+/* Sphere lattice mesh inside core */
+.core-mesh {
+  width: 100%;
+  height: 100%;
+  background-image: 
+    linear-gradient(rgba(13,227,233,0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(13,227,233,0.4) 1px, transparent 1px);
+  background-size: 15px 15px;
+  border-radius: 50%;
+  opacity: 0.7;
+  transform: scale(1.5) rotate(45deg);
+}
+
+.orb-status-text {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 4px;
+  color: #0de3e9;
+  opacity: 0.6;
+  text-shadow: 0 0 10px #0de3e9;
+  white-space: nowrap;
+}
+
+.orb-hint {
+  position: absolute;
+  bottom: 80px;
+  font-family: var(--font-mono);
+  color: rgba(13, 227, 233, 0.5);
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  animation: fade-in-out 3s infinite;
+}
+
+/* -- ANIMATION STATES -- */
+
+/* State: Listening */
+.jarvis-container.listening .ring-slow { border-color: rgba(255, 255, 255, 0.8); animation-duration: 5s; }
+.jarvis-container.listening .ring-medium { border-color: rgba(13, 227, 233, 1); border-style: solid; animation-duration: 3s; }
+.jarvis-container.listening .ring-fast { border-color: rgba(255, 255, 255, 0.9); animation-duration: 1.5s; width: 220px; height: 220px;}
+.jarvis-container.listening .orb-core { box-shadow: 0 0 60px #0de3e9; background: #0de3e9; }
+.jarvis-container.listening .orb-status-text { content: 'LISTENING'; color: white; text-shadow: 0 0 15px white;}
+
+/* State: Speaking */
+.jarvis-container.speaking .orb-core { 
+  background: white; 
+  box-shadow: 0 0 100px #0de3e9, 0 0 40px white; 
+  animation: speak-pulse 0.4s ease-in-out infinite alternate;
+}
+.jarvis-container.speaking .ring-fast {
+  animation: spin-reverse 0.5s linear infinite;
+  box-shadow: 0 0 40px #0de3e9;
+  border-width: 6px;
+}
+.jarvis-container.speaking .ring-medium { transform: scale(1.1); transition: 0.3s; }
+.jarvis-container.speaking .ring-slow { transform: scale(1.05); transition: 0.3s; }
+
+
+/* KEYFRAMES */
+@keyframes spin-forward { 100% { transform: rotate(360deg); } }
+@keyframes spin-reverse { 100% { transform: rotate(-360deg); } }
+@keyframes pulse-ambient { 50% { transform: scale(1.1); opacity: 0.8; } }
+@keyframes core-idle { 50% { transform: scale(1.03); box-shadow: 0 0 40px #0de3e9; } }
+@keyframes speak-pulse { 
+  0% { transform: scale(0.95); opacity: 0.9; } 
+  100% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 80px white; } 
+}
+@keyframes fade-in-out { 50% { opacity: 0; } }
+
+/* Minimal top bar for the App */
+.jarvis-top-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 50;
+}
+
+.jarvis-title {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 5px;
+  color: #0de3e9;
+  text-shadow: 0 0 10px rgba(13, 227, 233, 0.5);
+  font-style: italic;
+}
+
+.settings-btn {
+  background: transparent;
+  border: 1px solid rgba(13, 227, 233, 0.4);
+  color: #0de3e9;
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.settings-btn:hover {
+  background: rgba(13, 227, 233, 0.2);
+  box-shadow: 0 0 15px #0de3e9;
+}
+
+/* Sidebar overlay mode */
+.sidebar.overlay {
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  z-index: 100;
+  box-shadow: 5px 0 30px rgba(0,0,0,0.8);
+  border-right: 1px solid rgba(13, 227, 233, 0.3);
+  background: rgba(8, 12, 20, 0.95);
+  backdrop-filter: blur(10px);
+  transform: translateX(0);
+  transition: transform 0.3s ease;
+}
+
+.sidebar.overlay.hidden {
+  transform: translateX(-100%);
+}
+
