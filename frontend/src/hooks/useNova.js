@@ -6,7 +6,7 @@ export function useChat(systemPrompt) {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [model, setModel] = useState('llama3.2:3b');
+  const [model, setModel] = useState('llama3.2:1b');
 
   // Use a ref so sendMessage always sees the latest messages
   // without needing to be re-created on every message change

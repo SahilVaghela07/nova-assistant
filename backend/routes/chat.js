@@ -136,7 +136,7 @@ async function executeTool(toolCall) {
 
 // Main API Route (Streaming enabled)
 router.post('/', async (req, res) => {
-  const { messages, model = 'llama3.2:3b' } = req.body;
+  const { messages, model = 'llama3.2:1b' } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'Invalid messages format' });
