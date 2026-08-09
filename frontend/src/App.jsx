@@ -10,6 +10,7 @@ export default function App() {
   const [assistantName, setAssistantName] = useState('NOVA');
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
   const [voiceEnabled, setVoiceEnabled] = useState(true); // default to true in Jarvis mode
+  const [recognitionLang, setRecognitionLang] = useState('en-US'); // Default spoken language
   const [savedSessions, setSavedSessions] = useState([]);
   const [toast, setToast] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -35,6 +36,7 @@ export default function App() {
   const { isRecording, isSpeaking, voiceSupported, startRecording, stopRecording, speak, stopSpeaking } =
     useVoice({
       onTranscript: handleTranscript,
+      recognitionLang
     });
 
   // Handle orb click
@@ -73,9 +75,24 @@ export default function App() {
       {/* Top minimalistic bar */}
       <div className="jarvis-top-bar">
         <div className="jarvis-title">{assistantName} // CORE ONLINE</div>
-        <button className="settings-btn" onClick={() => setSidebarOpen(true)}>
-          ⚙️
-        </button>
+        
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          {/* Spoken Language Dropdown */}
+          <select 
+            className="settings-btn" 
+            style={{ width: 'auto', padding: '0 12px', fontSize: '11px', borderRadius: '20px' }}
+            value={recognitionLang}
+            onChange={(e) => setRecognitionLang(e.target.value)}
+          >
+            <option value="en-US">English</option>
+            <option value="hi-IN">Hindi (हिंदी)</option>
+            <option value="gu-IN">Gujarati (ગુજરાતી)</option>
+          </select>
+
+          <button className="settings-btn" onClick={() => setSidebarOpen(true)}>
+            ⚙️
+          </button>
+        </div>
       </div>
 
       {/* Main Orb Centerpiece */}

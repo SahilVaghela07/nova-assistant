@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd }) {
+export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd, recognitionLang = 'en-US' }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(false);
@@ -28,7 +28,7 @@ export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd }) {
     const recognition = new SpeechRecognition();
     recognition.continuous = true; // Let it run continuously for longer phrases
     recognition.interimResults = false;
-    recognition.lang = 'en-US';
+    recognition.lang = recognitionLang; // Use dynamic language
 
     recognition.onresult = (event) => {
       // Get the last recognized phrase (continuous mode keeps appending results)
@@ -60,14 +60,25 @@ export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd }) {
       }
     };
 
+    // If there was an old recognition running, stop it first
+    const oldRecognition = recognitionRef.current;
+    if (oldRecognition && isRecording) {
+      oldRecognition.abort();
+    }
+    
     recognitionRef.current = recognition;
+    
+    // Auto-restart if we were already listening but changed languages
+    if (shouldListenRef.current && !isSpeakingRef.current) {
+        try { recognition.start(); setIsRecording(true); } catch(e){}
+    }
 
     return () => {
-      shouldListenRef.current = false;
       recognition.abort();
-      synthRef.current?.cancel();
     };
-  }, []); 
+  }, [recognitionLang]); // ← Re-run when language changes
+
+  // ... (keep synth shutdown on unmount only once if needed, but it's handled via window)
 
   const startRecording = useCallback(() => {
     if (!recognitionRef.current) return;
@@ -108,11 +119,27 @@ export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd }) {
     utterance.volume = 1.0;
 
     const voices = synthRef.current.getVoices();
-    const preferredVoice =
-      voices.find((v) => v.name.includes('Google') && v.lang.startsWith('en')) ||
-      voices.find((v) => v.name.includes('Neural') || v.name.includes('Premium')) ||
-      voices.find((v) => v.lang.startsWith('en')) ||
-      voices[0];
+    let preferredVoice = null;
+    
+    // Auto-detect language based on script/characters in the AI response
+    const isHindi = /[\u0900-\u097F]/.test(text); // Devanagari script range
+    const isGujarati = /[\u0A80-\u0AFF]/.test(text); // Gujarati script range
+    
+    if (isGujarati) {
+      preferredVoice = voices.find((v) => v.lang.startsWith('gu'));
+    } else if (isHindi) {
+      preferredVoice = voices.find((v) => v.lang.startsWith('hi'));
+    }
+    
+    // Fallback to default/premium English voice if not Hindi/Gujarati or voice missing
+    if (!preferredVoice) {
+      preferredVoice =
+        voices.find((v) => v.name.includes('Google') && v.lang.startsWith('en')) ||
+        voices.find((v) => v.name.includes('Neural') || v.name.includes('Premium')) ||
+        voices.find((v) => v.lang.startsWith('en')) ||
+        voices[0];
+    }
+    
     if (preferredVoice) utterance.voice = preferredVoice;
 
     utterance.onstart = () => {
