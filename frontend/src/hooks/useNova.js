@@ -15,7 +15,7 @@ export function useChat(systemPrompt) {
     messagesRef.current = messages;
   }, [messages]);
 
-  const sendMessage = useCallback(async (userText) => {
+  const sendMessage = useCallback(async (userText, onStreamChunk = null) => {
     if (!userText.trim() || isLoading) return;
 
     const userMsg = {
@@ -34,33 +34,50 @@ export function useChat(systemPrompt) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Only send role + content to Ollama (not timestamps)
           messages: updatedMessages.map(({ role, content }) => ({ role, content })),
-          systemPrompt,
           model,
         }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to get response');
+        throw new Error('Failed to connect to backend stream');
       }
 
-      const assistantMsg = {
-        role: 'assistant',
-        content: data.reply,
-        timestamp: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-      return data.reply;
+      // Read chunked stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullReply = '';
+
+      // Initialize the assistant message in state so UI updates
+      const assistantTimestamp = new Date().toISOString();
+      setMessages((prev) => [...prev, { role: 'assistant', content: '', timestamp: assistantTimestamp }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunkText = decoder.decode(value, { stream: true });
+        fullReply += chunkText;
+
+        // Callback for the TTS engine or UI
+        if (onStreamChunk) onStreamChunk(chunkText);
+
+        // Update state progressively (optional, UI relies mostly on Voice in Jarvis mode, but good for logs)
+        setMessages((prev) => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1].content = fullReply;
+          return newMessages;
+        });
+      }
+
+      return fullReply;
     } catch (err) {
       setError(err.message);
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, systemPrompt, model]);
+  }, [isLoading, model]);
 
   const clearMessages = useCallback(() => {
     setMessages([]);

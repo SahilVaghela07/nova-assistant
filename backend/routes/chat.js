@@ -1,10 +1,11 @@
 import express from 'express';
 import { exec } from 'child_process';
 import util from 'util';
+import { Ollama } from 'ollama';
 
 const execAsync = util.promisify(exec);
 const router = express.Router();
-const OLLAMA_URL = 'http://localhost:11434/api/chat';
+const ollamaClient = new Ollama({ host: 'http://localhost:11434' });
 
 // Define the exact tools the AI can use to control the computer
 const agentTools = [
@@ -40,17 +41,12 @@ async function executeTool(toolCall) {
   const name = toolCall.function.name;
   const args = toolCall.function.arguments || {}; 
   
-  let parsedArgs = args;
-  if (typeof args === 'string') {
-    try { parsedArgs = JSON.parse(args); } catch(e) { parsedArgs = {}; }
-  }
-
   if (name === 'get_time') {
     return new Date().toLocaleString();
   }
   
   if (name === 'open_application') {
-    let app = (parsedArgs.app_name || '').toLowerCase().trim();
+    let app = (args.app_name || '').toLowerCase().trim();
     
     // Intelligently map conversational app names to Windows executables
     if (app.includes('note') || app === 'notepad') app = 'notepad';
@@ -74,64 +70,20 @@ async function executeTool(toolCall) {
   return 'Error: Unknown tool.';
 }
 
-// Recursive chat function to handle tool usage
-async function chatWithTools(messages, model, retryCount = 0) {
-  if (retryCount > 3) throw new Error("Agent loop exceeded maximum depth.");
-  
-  const response = await fetch(OLLAMA_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: false,
-      tools: agentTools,
-      options: {
-        temperature: 0.3 // Keep it coherent for non-English formats
-      }
-    })
-  });
 
-  if (!response.ok) {
-    throw new Error('Ollama connection failed.');
-  }
-
-  const data = await response.json();
-  const msg = data.message;
-
-  // Check if Ollama requested a tool execution
-  if (msg.tool_calls && msg.tool_calls.length > 0) {
-    console.log('🤖 Tool Execution Triggered:', JSON.stringify(msg.tool_calls));
-    
-    // Add the AI's tool request to history
-    messages.push(msg);
-
-    // Execute each tool
-    for (const toolCall of msg.tool_calls) {
-      const result = await executeTool(toolCall);
-      
-      // Add tool output back to history
-      messages.push({
-        role: 'tool',
-        content: result
-      });
-    }
-
-    // Recurse to generate final speech based on tool outputs
-    return chatWithTools(messages, model, retryCount + 1);
-  }
-
-  // No more tools, return final text
-  return { reply: msg.content, model: data.model };
-}
-
-// Main API Route
+// Main API Route (Streaming enabled)
 router.post('/', async (req, res) => {
   const { messages, model = 'llama3.2:3b' } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'Invalid messages format' });
   }
+
+  // Set HTTP headers for Chunked streaming transfer
+  res.writeHead(200, {
+    'Content-Type': 'text/plain',
+    'Transfer-Encoding': 'chunked'
+  });
 
   // HARDCODED INTELLIGENCE CORE
   const hardcodedCorePrompt = `
@@ -157,11 +109,54 @@ CRITICAL DIRECTIVES:
   ];
 
   try {
-    const result = await chatWithTools(fullMessages, model);
-    res.json(result);
+    // Recursive loop to handle Tools OR Stream Text
+    async function runAgentStream(currentMessages, retryCount = 0) {
+      if (retryCount > 3) throw new Error("Agent loop exceeded maximum depth.");
+
+      const responseStream = await ollamaClient.chat({
+        model,
+        messages: currentMessages,
+        tools: agentTools,
+        stream: true,
+        options: { temperature: 0.3 }
+      });
+
+      let detectedToolCalls = []; // Accumulate tool calls if present in stream
+
+      for await (const chunk of responseStream) {
+        // If it starts streaming tool logic inside the chunk
+        if (chunk.message?.tool_calls && chunk.message.tool_calls.length > 0) {
+           // With stream:true, ollama SDK usually bundles the entire tool_call into one chunk initially
+           detectedToolCalls = chunk.message.tool_calls;
+        } 
+        
+        // If it streams regular conversational text directly back to the user
+        if (chunk.message?.content && detectedToolCalls.length === 0) {
+           res.write(chunk.message.content); // Pipes text instantly to the UI
+        }
+      }
+
+      // If it resolved tool calls, we execute them, append to history, and recursively call again
+      if (detectedToolCalls.length > 0) {
+        // Push the assistant's context state
+        currentMessages.push({ role: 'assistant', tool_calls: detectedToolCalls });
+
+        for (const toolCall of detectedToolCalls) {
+          const result = await executeTool(toolCall);
+          currentMessages.push({ role: 'tool', content: result });
+        }
+        
+        // Recurse to turn the tool execution result into spoken text (which will hit the text stream logic above)
+        await runAgentStream(currentMessages, retryCount + 1);
+      }
+    }
+
+    await runAgentStream(fullMessages);
+    res.end();
   } catch (err) {
-    console.error('Chat route error:', err.message);
-    res.status(500).json({ error: 'System connection error: ' + err.message });
+    console.error('Streaming connection error:', err.message);
+    res.write('System error occurred during streaming.');
+    res.end();
   }
 });
 

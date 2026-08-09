@@ -102,83 +102,87 @@ export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd, recognitionLa
     }
   }, [isRecording]);
 
-  const speak = useCallback((text, enabled) => {
-    if (!enabled || !synthRef.current || !text) return;
+  const speakQueue = useRef([]);
+  const accumulationBuffer = useRef('');
 
-    // Pause microphone while speaking so AI doesn't hear itself
-    if (recognitionRef.current && isRecording) {
-      recognitionRef.current.stop();
-      setIsRecording(false);
-    }
+  // Main streaming voice function
+  const streamSpeak = useCallback((chunk, enabled, isNewMessage = false) => {
+    if (!enabled || !synthRef.current || !chunk) return;
 
-    synthRef.current.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 1.05;
-    utterance.volume = 1.0;
-
-    const voices = synthRef.current.getVoices();
-    let preferredVoice = null;
-    
-    // Auto-detect language based on script/characters in the AI response
-    const isHindi = /[\u0900-\u097F]/.test(text); // Devanagari script range
-    const isGujarati = /[\u0A80-\u0AFF]/.test(text); // Gujarati script range
-    
-    if (isGujarati) {
-      preferredVoice = voices.find((v) => v.lang.startsWith('gu'));
-    } else if (isHindi) {
-      preferredVoice = voices.find((v) => v.lang.startsWith('hi'));
-    }
-    
-    // Fallback to default/premium English voice if not Hindi/Gujarati or voice missing
-    if (!preferredVoice) {
-      preferredVoice =
-        voices.find((v) => v.name.includes('Google') && v.lang.startsWith('en')) ||
-        voices.find((v) => v.name.includes('Neural') || v.name.includes('Premium')) ||
-        voices.find((v) => v.lang.startsWith('en')) ||
-        voices[0];
-    }
-    
-    if (preferredVoice) utterance.voice = preferredVoice;
-
-    utterance.onstart = () => {
-      isSpeakingRef.current = true;
-      setIsSpeaking(true);
-      onSpeakStartRef.current?.();
-    };
-    
-    utterance.onend = () => {
-      isSpeakingRef.current = false;
-      setIsSpeaking(false);
-      onSpeakEndRef.current?.();
+    // Reset everything if it's the start of a completely new LLM response
+    if (isNewMessage) {
+      synthRef.current.cancel();
+      accumulationBuffer.current = '';
       
-      // ALWAYS LISTENING LOGIC: Resume mic after speaking if it was active
-      if (shouldListenRef.current) {
-        try {
-          recognitionRef.current?.start();
-          setIsRecording(true);
-        } catch (e) {
-          // Ignore
+      // Pause mic while AI speaks
+      if (recognitionRef.current && isRecording) {
+        recognitionRef.current.stop();
+        setIsRecording(false);
+      }
+    }
+
+    accumulationBuffer.current += chunk;
+
+    // Look for sentence boundaries (English, Hindi, Gujarati punctuation)
+    const match = accumulationBuffer.current.match(/[^.!?।\n]+[.!?।\n]+/);
+    
+    if (match) {
+      const sentence = match[0];
+      accumulationBuffer.current = accumulationBuffer.current.substring(sentence.length);
+      
+      // Create utterance for this specific sentence
+      const utterance = new SpeechSynthesisUtterance(sentence.trim());
+      utterance.rate = 1.0;
+      utterance.pitch = 1.05;
+      utterance.volume = 1.0;
+
+      const voices = synthRef.current.getVoices();
+      let preferredVoice = null;
+      
+      const isHindi = /[\u0900-\u097F]/.test(sentence); 
+      const isGujarati = /[\u0A80-\u0AFF]/.test(sentence); 
+      
+      if (isGujarati) preferredVoice = voices.find((v) => v.lang.startsWith('gu'));
+      else if (isHindi) preferredVoice = voices.find((v) => v.lang.startsWith('hi'));
+      
+      if (!preferredVoice) {
+        preferredVoice =
+          voices.find((v) => v.name.includes('Google') && v.lang.startsWith('en')) ||
+          voices.find((v) => v.name.includes('Neural') || v.name.includes('Premium')) ||
+          voices.find((v) => v.lang.startsWith('en')) ||
+          voices[0];
+      }
+      
+      if (preferredVoice) utterance.voice = preferredVoice;
+
+      utterance.onstart = () => {
+        isSpeakingRef.current = true;
+        setIsSpeaking(true);
+        onSpeakStartRef.current?.();
+      };
+      
+      utterance.onend = () => {
+        // If the browser queue is fully empty, we are done speaking the entire response
+        if (!synthRef.current.pending && !synthRef.current.speaking) {
+          isSpeakingRef.current = false;
+          setIsSpeaking(false);
+          onSpeakEndRef.current?.();
+          
+          if (shouldListenRef.current) {
+            try { recognitionRef.current?.start(); setIsRecording(true); } catch(e){}
+          }
         }
-      }
-    };
-    
-    utterance.onerror = () => {
-      isSpeakingRef.current = false;
-      setIsSpeaking(false);
-      onSpeakEndRef.current?.();
-      
-      if (shouldListenRef.current) {
-        try {
-          recognitionRef.current?.start();
-          setIsRecording(true);
-        } catch (e) {}
-      }
-    };
+      };
 
-    synthRef.current.speak(utterance);
+      // Push exactly this sentence into the native browser audio queue
+      synthRef.current.speak(utterance);
+    }
   }, [isRecording]);
+
+  const speak = useCallback((text, enabled) => {
+    // For backwards compability with complete final strings
+    streamSpeak(text + ".", enabled, true);
+  }, [streamSpeak]);
 
   const stopSpeaking = useCallback(() => {
     synthRef.current?.cancel();
@@ -200,6 +204,7 @@ export function useVoice({ onTranscript, onSpeakStart, onSpeakEnd, recognitionLa
     startRecording,
     stopRecording,
     speak,
+    streamSpeak,
     stopSpeaking,
   };
 }

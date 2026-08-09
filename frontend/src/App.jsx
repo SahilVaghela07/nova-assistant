@@ -24,20 +24,22 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // Voice: handle transcript → auto-send
-  const handleTranscript = useCallback((text) => {
-    if (text.trim()) {
-      sendMessage(text).then(reply => {
-        if (reply) speak(reply, voiceEnabled);
-      });
-    }
-  }, [sendMessage, voiceEnabled]);
+  const voiceHook = useVoice({
+    onTranscript: (text) => {
+      if (text.trim()) {
+        let isFirstChunk = true;
+        sendMessage(text, (chunk) => {
+          if (voiceEnabled) {
+            voiceHook.streamSpeak(chunk, voiceEnabled, isFirstChunk);
+            isFirstChunk = false;
+          }
+        });
+      }
+    },
+    recognitionLang
+  });
 
-  const { isRecording, isSpeaking, voiceSupported, startRecording, stopRecording, speak, stopSpeaking } =
-    useVoice({
-      onTranscript: handleTranscript,
-      recognitionLang
-    });
+  const { isRecording, isSpeaking, voiceSupported, startRecording, stopRecording, speak, streamSpeak, stopSpeaking } = voiceHook;
 
   // Handle orb click
   const handleOrbClick = useCallback(() => {
