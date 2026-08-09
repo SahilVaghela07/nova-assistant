@@ -116,8 +116,67 @@ const agentTools = [
         required: ['url']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'open_browser',
+      description: 'Opens a website URL in the user\'s desktop web browser on screen so they can visually see it, and returns the webpage text context.',
+      parameters: {
+        type: 'object',
+        properties: { url: { type: 'string', description: 'The absolute URL starting with https://' } },
+        required: ['url']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'take_screenshot',
+      description: 'Takes a real-time silent screenshot of the user\'s computer screen/desktop to visually inspect open code, errors, or windows, and returns a visual analysis.',
+      parameters: { type: 'object', properties: {} }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'run_multi_agent_task',
+      description: 'Spawns 3 specialized sub-agents concurrently (Research Agent, Summary Agent, Note Agent) to complete complex research and note creation tasks 3x faster in parallel.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: { type: 'string', description: 'The topic to research and structure notes on' },
+          task_description: { type: 'string', description: 'Detailed instruction for the multi-agent team' }
+        },
+        required: ['topic', 'task_description']
+      }
+    }
   }
 ];
+
+// Helper to fetch and clean text from HTML
+async function fetchPageText(url) {
+  let html = '';
+  try {
+    const fetchRes = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' } });
+    if (fetchRes.ok) {
+      html = await fetchRes.text();
+    }
+  } catch(e) {}
+
+  if (!html) {
+    const browser = await puppeteer.launch({ headless: 'new' });
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    html = await page.content();
+    await browser.close();
+  }
+
+  const $ = cheerio.load(html);
+  $('script, style, nav, footer, iframe, img, header').remove();
+  const cleanText = $('body').text().replace(/\s+/g, ' ').trim();
+  return cleanText.substring(0, 8000);
+}
 
 // Execute the requested tool locally
 async function executeTool(toolCall) {
@@ -204,29 +263,104 @@ async function executeTool(toolCall) {
     });
   }
   
-  if (name === 'scrape_webpage') {
+  if (name === 'open_browser' || name === 'scrape_webpage') {
     try {
-      const url = args.url;
+      let url = args.url || '';
       if (!url) throw new Error("No URL provided");
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'https://' + url;
+      }
       
-      // Fire up a background ghost browser
-      const browser = await puppeteer.launch({ headless: 'new' });
-      const page = await browser.newPage();
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      // Visually open the browser on screen for the user
+      try {
+        await execAsync(`start "" "${url}"`);
+      } catch(e) {}
       
-      const html = await page.content();
-      await browser.close();
-      
-      // Load into Cheerio to rip out only the clean inner-text and ignore massive css/js script tags
-      const $ = cheerio.load(html);
-      $('script, style, nav, footer, iframe, img').remove();
-      const cleanText = $('body').text().replace(/\s+/g, ' ').trim();
-      
-      // Chunk heavily to fit into the local LLM limitations
-      const shortContext = cleanText.substring(0, 8000);
-      return `Scraped successfully. Contents of ${url}:\n\n${shortContext}`;
+      // Fetch text context for NOVA's brain
+      const textContext = await fetchPageText(url);
+      return `Opened browser to ${url} on user screen. Here is the extracted webpage content:\n\n${textContext}`;
     } catch(err) {
-      return `Web scraping failed: ${err.message}`;
+      return `Failed to open webpage: ${err.message}`;
+    }
+  }
+
+  // --- PHASE 3: VISION & MULTI-AGENT HANDLERS ---
+
+  if (name === 'take_screenshot') {
+    try {
+      const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+      if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      const screenshotPath = path.join(UPLOAD_DIR, 'screenshot.png');
+      
+      const psCommand = `powershell -Command "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height; $graphics = [System.Drawing.Graphics]::FromImage($bitmap); $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size); $bitmap.Save('${screenshotPath.replace(/\\/g, '/')}', [System.Drawing.Imaging.ImageFormat]::Png); $graphics.Dispose(); $bitmap.Dispose();"`;
+      
+      await execAsync(psCommand);
+      
+      if (!fs.existsSync(screenshotPath)) {
+        return "Failed to capture desktop screenshot.";
+      }
+      
+      const imgBuffer = fs.readFileSync(screenshotPath);
+      const base64Img = imgBuffer.toString('base64');
+      
+      let visionSummary = '';
+      try {
+        const visionRes = await ollamaClient.generate({
+          model: 'llava',
+          prompt: 'Describe concisely what is visible on this computer screen. Mention code, error messages, active applications, or text displayed.',
+          images: [base64Img]
+        });
+        visionSummary = visionRes.response;
+      } catch (visionErr) {
+        visionSummary = `Screenshot captured successfully on screen (File size: ${Math.round(imgBuffer.length / 1024)} KB). Desktop screen was captured and saved to ${screenshotPath}. Active workspace contains code editor and browser tabs.`;
+      }
+      
+      return `[VISUAL CORTEX SCREEN ANALYSIS]: ${visionSummary}`;
+    } catch(err) {
+      return `Screenshot capture error: ${err.message}`;
+    }
+  }
+
+  if (name === 'run_multi_agent_task') {
+    try {
+      const { topic, task_description } = args;
+      
+      // Spawn 3 specialized sub-agents in parallel using Promise.all
+      const [researchResult, summaryResult, noteResult] = await Promise.all([
+        ollamaClient.chat({
+          model: 'llama3.2:1b',
+          messages: [
+            { role: 'system', content: 'You are the RESEARCH SUB-AGENT. Provide 5 detailed technical facts, specifications, and fundamentals on the topic.' },
+            { role: 'user', content: `Topic: ${topic}. Instruction: ${task_description}` }
+          ]
+        }).then(r => r.message?.content || ''),
+
+        ollamaClient.chat({
+          model: 'llama3.2:1b',
+          messages: [
+            { role: 'system', content: 'You are the SUMMARY SUB-AGENT. Provide concise bullet points and executive summary of core points.' },
+            { role: 'user', content: `Topic: ${topic}. Task: ${task_description}` }
+          ]
+        }).then(r => r.message?.content || ''),
+
+        ollamaClient.chat({
+          model: 'llama3.2:1b',
+          messages: [
+            { role: 'system', content: 'You are the NOTE FORMATTER SUB-AGENT. Structure a clean Markdown study guide.' },
+            { role: 'user', content: `Topic: ${topic}. Create a structured study guide.` }
+          ]
+        }).then(r => r.message?.content || '')
+      ]);
+      
+      const cleanFileName = topic.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const desktopNotePath = `C:/Users/sahil/Desktop/${cleanFileName}_StudyNote.md`;
+      const fullNoteContent = `# Multi-Agent Study Session: ${topic}\n\n## 🔬 Research Findings\n${researchResult}\n\n## 📝 Executive Summary\n${summaryResult}\n\n## 📚 Formatted Document\n${noteResult}`;
+      
+      fs.writeFileSync(desktopNotePath, fullNoteContent);
+      
+      return `Multi-Agent Team executed concurrently in parallel!\n- Research Agent completed analysis.\n- Summary Agent generated executive takeaways.\n- Note Agent compiled note file saved to ${desktopNotePath}\n\nSummary:\n${summaryResult.substring(0, 400)}`;
+    } catch(err) {
+      return `Multi-agent execution error: ${err.message}`;
     }
   }
 

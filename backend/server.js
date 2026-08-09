@@ -37,8 +37,9 @@ app.listen(PORT, () => {
   console.log(`🔒 All data stays local — nothing leaves your machine\n`);
   
   // --- PROACTIVE AGENT BEHAVIOR (PHASE 2) ---
-  // A Cron job that triggers every morning at 8:00 AM (for testing, every minute: '* * * * *')
-  // We will run it every 1 minute for this testing workshop.
+  // To re-enable scheduled mornings at 8:00 AM, use: cron.schedule('0 8 * * *', ...)
+  // Currently disabled so it doesn't repeatedly interrupt during testing.
+  /*
   cron.schedule('* * * * *', async () => {
     console.log("⏰ Cron Triggered: Synthesizing Proactive Greeting...");
     try {
@@ -60,4 +61,5 @@ app.listen(PORT, () => {
       console.error("Proactive Cron Failed: ", err.message);
     }
   });
+  */
 });

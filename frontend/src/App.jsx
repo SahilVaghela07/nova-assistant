@@ -86,6 +86,27 @@ export default function App() {
 
   const { isRecording, isSpeaking, voiceSupported, startRecording, stopRecording, speak, streamSpeak, stopSpeaking } = voiceHook;
 
+  // Set up Proactive Server-Sent Events Tunnel
+  useEffect(() => {
+    const sse = new EventSource('http://localhost:3001/api/events');
+    
+    sse.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'connected') {
+          console.log(data.message);
+        } else if (data.type === 'tts_speak') {
+          // Speak unprompted!
+          if (voiceEnabled) {
+            speak(data.payload, true);
+          }
+        }
+      } catch(e) {}
+    };
+
+    return () => sse.close();
+  }, [voiceEnabled, speak]);
+
   // Handle orb click
   const handleOrbClick = useCallback(() => {
     if (isRecording) stopRecording();
