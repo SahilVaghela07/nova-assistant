@@ -4,6 +4,8 @@ import util from 'util';
 import fs from 'fs';
 import path from 'path';
 import { Ollama } from 'ollama';
+import puppeteer from 'puppeteer';
+import * as cheerio from 'cheerio';
 
 const execAsync = util.promisify(exec);
 const router = express.Router();
@@ -102,6 +104,18 @@ const agentTools = [
         required: ['command']
       }
     }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'scrape_webpage',
+      description: 'Navigates to a specific URL (like wikipedia) and scrapes all the text on the page for you to read. Use this when you are asked for information about things you do not know.',
+      parameters: {
+        type: 'object',
+        properties: { url: { type: 'string', description: 'The absolute URL starting with https://' } },
+        required: ['url']
+      }
+    }
   }
 ];
 
@@ -182,8 +196,6 @@ async function executeTool(toolCall) {
     }
   }
 
-  // SECURITY GATEWAY: Dangerous Tools DO NOT execute here. 
-  // We return a specialized UI payload that the Frontend catches and renders into a Security Modal.
   if (name === 'write_local_file' || name === 'run_terminal_command') {
     return JSON.stringify({
       __AUTH_REQUIRED__: true,
@@ -192,6 +204,32 @@ async function executeTool(toolCall) {
     });
   }
   
+  if (name === 'scrape_webpage') {
+    try {
+      const url = args.url;
+      if (!url) throw new Error("No URL provided");
+      
+      // Fire up a background ghost browser
+      const browser = await puppeteer.launch({ headless: 'new' });
+      const page = await browser.newPage();
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      
+      const html = await page.content();
+      await browser.close();
+      
+      // Load into Cheerio to rip out only the clean inner-text and ignore massive css/js script tags
+      const $ = cheerio.load(html);
+      $('script, style, nav, footer, iframe, img').remove();
+      const cleanText = $('body').text().replace(/\s+/g, ' ').trim();
+      
+      // Chunk heavily to fit into the local LLM limitations
+      const shortContext = cleanText.substring(0, 8000);
+      return `Scraped successfully. Contents of ${url}:\n\n${shortContext}`;
+    } catch(err) {
+      return `Web scraping failed: ${err.message}`;
+    }
+  }
+
   return 'Error: Unknown tool.';
 }
 
@@ -237,8 +275,8 @@ CRITICAL DIRECTIVES:
    - If Sahil speaks in Hindi, you MUST reply fluently and entirely in Hindi.
    - If Sahil speaks in Gujarati, you MUST reply fluently and entirely in Gujarati.
    - If English, reply in English. 
-   Do not mix scripts randomly. Commit 100% to the language spoken to you.
-5. If Sahil asks you to open an app or get the time or remember something, silently use your integrated Tools to perform the action, and then audibly confirm you completed it.
+5. ABSOLUTE PATHING: If you use the write_local_file or read_local_file tool, you MUST use absolute Windows paths. Sahil's desktop is located exactly at: "C:/Users/sahil/Desktop/".
+6. If Sahil asks you to open an app or get the time or remember something, silently use your integrated Tools to perform the action, and then audibly confirm you completed it.
 `;
 
   const fullMessages = [
@@ -281,6 +319,14 @@ CRITICAL DIRECTIVES:
 
         for (const toolCall of detectedToolCalls) {
           const result = await executeTool(toolCall);
+          
+          if (result.includes('__AUTH_REQUIRED__')) {
+            // Push the special gateway auth payload directly to the UI
+            res.write(result);
+            // Break the recursive loop entirely until the UI sends the Auth confirmation back
+            return;
+          }
+
           currentMessages.push({ role: 'tool', content: result });
         }
         

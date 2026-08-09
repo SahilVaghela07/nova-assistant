@@ -29,6 +29,12 @@ router.post('/', async (req, res) => {
       const { path: filePath, content } = args;
       if (!filePath || !content) throw new Error("Missing path or content.");
       
+      const pathLib = await import('path');
+      const parentDir = pathLib.dirname(filePath);
+      if (!fs.existsSync(parentDir)) {
+        fs.mkdirSync(parentDir, { recursive: true });
+      }
+
       fs.writeFileSync(filePath, content);
       return res.json({ result: `✅ File successfully written to ${filePath}` });
     }
