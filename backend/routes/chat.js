@@ -44,9 +44,15 @@ router.post('/', async (req, res) => {
     res.json({ reply, model: data.model });
   } catch (err) {
     console.error('Chat route error:', err.message);
-    if (err.code === 'ECONNREFUSED') {
+    // node-fetch v3 throws TypeError("fetch failed") for connection refused
+    const isConnectionError = 
+      err.code === 'ECONNREFUSED' || 
+      err.cause?.code === 'ECONNREFUSED' ||
+      err.message === 'fetch failed' ||
+      err.message?.includes('ECONNREFUSED');
+    if (isConnectionError) {
       return res.status(503).json({ 
-        error: 'Cannot connect to Ollama. Please make sure Ollama is installed and running.' 
+        error: 'Ollama is not running. Please install Ollama from ollama.com, pull a model, and start it.' 
       });
     }
     res.status(500).json({ error: 'Internal server error: ' + err.message });
