@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { marked } from 'marked';
 
 // Configure marked for safe, clean rendering
@@ -47,11 +47,29 @@ function TypingIndicator({ name }) {
 
 function AssistantBubble({ content }) {
   const html = useMemo(() => marked.parse(content || ''), [content]);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [content]);
+
   return (
-    <div
-      className="msg-bubble markdown-body"
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className="assistant-bubble-wrapper">
+      <div
+        className="msg-bubble markdown-body"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+      <button
+        className={`copy-btn ${copied ? 'copied' : ''}`}
+        onClick={handleCopy}
+        title="Copy response"
+      >
+        {copied ? '✓ Copied' : '⎘ Copy'}
+      </button>
+    </div>
   );
 }
 

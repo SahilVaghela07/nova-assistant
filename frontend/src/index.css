@@ -594,6 +594,40 @@ html, body, #root {
   border-bottom-left-radius: 4px;
 }
 
+/* Assistant bubble wrapper (bubble + copy button) */
+.assistant-bubble-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.copy-btn {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-mono);
+  opacity: 0;
+}
+
+.assistant-bubble-wrapper:hover .copy-btn { opacity: 1; }
+
+.copy-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--text-accent);
+}
+
+.copy-btn.copied {
+  opacity: 1;
+  border-color: var(--accent-success);
+  color: var(--accent-success);
+}
+
 .msg-time {
   font-size: 10px;
   color: var(--text-muted);
